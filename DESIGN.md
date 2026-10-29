@@ -78,20 +78,29 @@ leftover file whose recorded process is gone. `CAIRN_LOCK=file` selects that
 portable lock. Windows support requires a tested lock implementation before
 being advertised.
 
-No agent integration has yet been validated against live vendor applications.
-CLI/file access and manual Markdown attachment are the initial interfaces.
+`cairn install` merges user-level hooks and copies one checkpoint skill into
+each of `~/.cursor`, `~/.claude`, and `~/.codex` that already exists. Session
+start runs `cairn hook session-start` and injects a fresh body, or a short
+stale refusal with drift field names. Stop runs `cairn hook stop` and emits one
+reminder per drifted fingerprint. The skill calls `cairn template` and
+`cairn checkpoint`. Hooks read the worktree from their stdin payload, fail open,
+and do not select another worktree. MCP and remote publication stay deferred.
 
 ## Validation and next increments
 
 Automated tests cover two worktrees, staged/unstaged/untracked drift, HEAD drift,
 revision and ticket conflicts, concurrent checkpoint writers, failed replacement,
-ignored evidence, exports, and rejection of invalid storage paths.
+ignored evidence, exports, rejection of invalid storage paths, hook output, and
+install merging disposable home directories.
 
 Before claiming usefulness, run Claude → Codex → Grok on a real ticket and test
 a desktop attachment handoff and another-machine transfer. Measure repeated
 investigation, acceptance failures, and total tokens where hosts expose them.
 
-Next: inspect the prototype with real agents, tighten the format from those
-results, then package a reusable skill. Add Jira/GitHub publication adapters or
-MCP only when a tested workflow needs them. Any external posting is explicit.
+Next: inspect the adapters with real agents, then tighten the format from those
+results. Add Jira/GitHub publication adapters or MCP only when a tested workflow
+needs them. Any external posting is explicit. Live vendor sessions are not yet
+validated. CLI commands and `export` remain the interface for a host that cannot
+hook.
+
 No paid service or subscription may be required for the core handoff workflow.

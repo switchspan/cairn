@@ -10,6 +10,7 @@
   },
   "files": [
     "dist/src",
+    "adapters",
     "templates",
     "README.md",
     "LICENSE"

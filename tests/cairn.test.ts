@@ -272,3 +272,226 @@ test('ignored evidence does not create drift', withFixture((fx) => {
   fs.writeFileSync(path.join(fx.repo, '.cairn', 'evidence.log'), 'test output');
   assert.equal(fx.run(['resume']).status, 0);
 }));
+
+function runInput(args: string[], input = ''): Result {
+  const result = spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', input });
+  return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+function hookCommands(value: unknown, event: 'session-start' | 'stop'): string[] {
+  const found: string[] = [];
+  const visit = (node: unknown, seen: Set<unknown>) => {
+    if (!node || typeof node !== 'object') return;
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry, seen);
+      return;
+    }
+    const record = node as Record<string, unknown>;
+    if (typeof record.command === 'string' && record.command.includes(` hook ${event} --host `)) {
+      found.push(record.command);
+    }
+    for (const entry of Object.values(record)) visit(entry, seen);
+  };
+  visit(value, new Set());
+  return found;
+}
+
+test('template prints the draft headings', () => {
+  const result = runInput(['template']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /## Next action/);
+});
+
+test('session start injects a fresh body and a stale refusal', withFixture((fx) => {
+  const absent = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  assert.equal(absent.status, 0, absent.stderr);
+  assert.equal(absent.stdout, '');
+  assert.equal(absent.stderr, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn')), false);
+
+  const missing = runInput(
+    ['hook', 'session-start', '--host', 'cursor'],
+    JSON.stringify({ cwd: fx.base }),
+  );
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(missing.stdout, '');
+
+  fx.save();
+  const fresh = runInput(
+    ['--cwd', fx.base, 'hook', 'session-start', '--host', 'cursor'],
+    JSON.stringify({ cwd: fx.base, worktree: { path: fx.repo } }),
+  );
+  assert.equal(fresh.status, 0, fresh.stderr);
+  const cursor = JSON.parse(fresh.stdout) as { additional_context?: string };
+  assert.deepEqual(Object.keys(cursor), ['additional_context']);
+  assert.match(cursor.additional_context ?? '', /Objective: fix retries/);
+  assert.ok((cursor.additional_context ?? '').includes(TICKET));
+  assert.doesNotMatch(cursor.additional_context ?? '', /<!-- cairn/);
+
+  const claude = runInput(
+    ['hook', 'session-start', '--host', 'claude'],
+    JSON.stringify({ workspace: { current_dir: fx.repo } }),
+  );
+  const claudePayload = JSON.parse(claude.stdout) as {
+    additional_context?: string;
+    hookSpecificOutput?: { hookEventName?: string; additionalContext?: string };
+  };
+  assert.deepEqual(Object.keys(claudePayload), ['hookSpecificOutput']);
+  assert.equal(claudePayload.hookSpecificOutput?.hookEventName, 'SessionStart');
+  assert.match(claudePayload.hookSpecificOutput?.additionalContext ?? '', /Objective: fix retries/);
+  const codex = runInput(['hook', 'session-start', '--host', 'codex'], JSON.stringify({ cwd: fx.repo }));
+  const codexPayload = JSON.parse(codex.stdout) as { hookSpecificOutput?: { additionalContext?: string } };
+  assert.equal(
+    codexPayload.hookSpecificOutput?.additionalContext,
+    claudePayload.hookSpecificOutput?.additionalContext,
+  );
+
+  fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
+  const stale = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  assert.equal(stale.status, 0, stale.stderr);
+  const refusal = JSON.parse(stale.stdout) as { additional_context?: string };
+  assert.match(refusal.additional_context ?? '', /Drift: fingerprint/);
+  assert.doesNotMatch(refusal.additional_context ?? '', /fix retries/);
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
+  assert.equal(runInput(['hook', 'session-start', '--host', 'cursor'], '{').stdout, '');
+}));
+
+test('stop reminds once for a drifted fingerprint', withFixture((fx) => {
+  fx.save();
+  const fresh = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.equal(fresh.stdout, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
+
+  fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
+  const claude = runInput(['hook', 'stop', '--host', 'claude'], JSON.stringify({ cwd: fx.repo }));
+  const blocked = JSON.parse(claude.stdout) as { decision?: string; reason?: string };
+  assert.deepEqual(Object.keys(blocked), ['decision', 'reason']);
+  assert.equal(blocked.decision, 'block');
+  assert.match(blocked.reason ?? '', /Cairn revision 1 is stale \(drift: fingerprint\)/);
+  const marker = fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8');
+  assert.match(marker, /^[0-9a-f]{64}\n$/);
+
+  const again = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  assert.equal(again.stdout, '');
+  assert.equal(fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8'), marker);
+  assert.doesNotMatch(fx.git('status', '--porcelain'), /stop-nudge/);
+}));
+
+test('cursor stop uses followup_message', withFixture((fx) => {
+  fx.save();
+  fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
+  const result = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  const payload = JSON.parse(result.stdout) as { followup_message?: string };
+  assert.deepEqual(Object.keys(payload), ['followup_message']);
+  assert.match(payload.followup_message ?? '', /revision 1/);
+}));
+
+test('install merges host config and uninstall removes only cairn', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-home-'));
+  try {
+    const cursorDir = path.join(home, '.cursor');
+    const codexDir = path.join(home, '.codex');
+    fs.mkdirSync(cursorDir);
+    fs.mkdirSync(codexDir);
+    const cursorHooks = path.join(cursorDir, 'hooks.json');
+    const codexHooks = path.join(codexDir, 'hooks.json');
+    fs.writeFileSync(cursorHooks, `${JSON.stringify({
+      version: 1,
+      unrelated: true,
+      hooks: {
+        sessionStart: [{ command: 'echo keep-session' }],
+        stop: [{ command: 'echo keep-stop' }],
+      },
+    }, null, 2)}\n`);
+    fs.writeFileSync(codexHooks, `${JSON.stringify({
+      theme: 'dark',
+      hooks: {
+        SessionStart: [{ hooks: [{ type: 'command', command: 'echo keep-codex' }] }],
+      },
+    }, null, 2)}\n`);
+
+    const installed = runInput(['install', '--home', home]);
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /claude: skipped/);
+    assert.equal(fs.existsSync(path.join(home, '.claude')), false);
+    const cursor = JSON.parse(fs.readFileSync(cursorHooks, 'utf8')) as {
+      version: number;
+      unrelated: boolean;
+      hooks: { sessionStart: Array<{ command: string }>; stop: Array<{ command: string }> };
+    };
+    assert.equal(cursor.version, 1);
+    assert.equal(cursor.unrelated, true);
+    assert.equal(cursor.hooks.sessionStart[0]?.command, 'echo keep-session');
+    assert.equal(hookCommands(cursor, 'session-start').length, 1);
+    assert.equal(hookCommands(cursor, 'stop').length, 1);
+    assert.match(fs.readFileSync(path.join(cursorDir, 'skills', 'cairn', 'SKILL.md'), 'utf8'), /name: cairn/);
+    const codex = JSON.parse(fs.readFileSync(codexHooks, 'utf8')) as {
+      theme: string;
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    assert.equal(codex.theme, 'dark');
+    assert.equal(codex.hooks.SessionStart[0]?.hooks[0]?.command, 'echo keep-codex');
+    assert.equal(hookCommands(codex, 'session-start').length, 1);
+    const backup = fs.readFileSync(`${cursorHooks}.cairn-bak`, 'utf8');
+    assert.match(backup, /echo keep-session/);
+    assert.doesNotMatch(backup, /hook session-start/);
+
+    const again = runInput(['install', '--home', home]);
+    assert.equal(again.status, 0, again.stderr);
+    const repeated = JSON.parse(fs.readFileSync(cursorHooks, 'utf8')) as {
+      hooks: { sessionStart: unknown[] };
+    };
+    assert.equal(repeated.hooks.sessionStart.length, 2);
+    assert.equal(hookCommands(repeated, 'session-start').length, 1);
+    assert.equal(fs.readFileSync(`${cursorHooks}.cairn-bak`, 'utf8'), backup);
+
+    const removed = runInput(['uninstall', '--home', home]);
+    assert.equal(removed.status, 0, removed.stderr);
+    const restored = JSON.parse(fs.readFileSync(cursorHooks, 'utf8')) as {
+      unrelated: boolean;
+      hooks: { sessionStart: Array<{ command: string }>; stop: Array<{ command: string }> };
+    };
+    assert.equal(restored.unrelated, true);
+    assert.deepEqual(restored.hooks.sessionStart, [{ command: 'echo keep-session' }]);
+    assert.deepEqual(restored.hooks.stop, [{ command: 'echo keep-stop' }]);
+    const restoredCodex = JSON.parse(fs.readFileSync(codexHooks, 'utf8')) as {
+      theme: string;
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }>; Stop?: unknown };
+    };
+    assert.equal(restoredCodex.theme, 'dark');
+    assert.equal(restoredCodex.hooks.Stop, undefined);
+    assert.deepEqual(restoredCodex.hooks.SessionStart, [{
+      hooks: [{ type: 'command', command: 'echo keep-codex' }],
+    }]);
+    assert.equal(fs.existsSync(path.join(cursorDir, 'skills', 'cairn')), false);
+    assert.equal(fs.existsSync(path.join(codexDir, 'skills', 'cairn')), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('install refuses an unreadable hooks file without replacing it', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-home-'));
+  try {
+    const cursorDir = path.join(home, '.cursor');
+    fs.mkdirSync(cursorDir);
+    const hooks = path.join(cursorDir, 'hooks.json');
+    fs.writeFileSync(hooks, '{');
+    const result = runInput(['install', '--home', home]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Could not parse/);
+    assert.equal(fs.readFileSync(hooks, 'utf8'), '{');
+    assert.equal(fs.existsSync(`${hooks}.cairn-bak`), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('hook usage errors stay on stderr', () => {
+  const result = runInput(['hook', 'session-start']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Missing --host/);
+});

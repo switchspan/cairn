@@ -1,8 +1,12 @@
 # Agent handoff protocol
 
-Use these instructions in any coding agent. This is a portable prompt, not a
-host-specific plugin. A desktop chat without local filesystem access needs an
-exported attachment; a file path alone does not grant access.
+`cairn install` registers a session-start hook and a checkpoint skill for Cursor,
+Claude Code, and Codex when those configuration directories already exist. The
+hook injects the current checkpoint. The skill writes the next one. Use the
+steps below when a host cannot run those adapters.
+
+A desktop chat without local filesystem access needs an exported attachment; a
+file path alone does not grant access.
 
 ## Resume
 

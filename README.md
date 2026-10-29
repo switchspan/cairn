@@ -18,19 +18,21 @@ From this repository:
 ```sh
 npm install
 npm install -g .
+cairn install
 ```
 
-That puts `cairn` on your `PATH`. In a ticket worktree:
-
-```sh
-cairn resume
-```
+That puts `cairn` on your `PATH` and registers adapters for each of Cursor,
+Claude Code, and Codex whose configuration directory already exists. A new chat
+in a ticket worktree receives the current checkpoint. Invoke the `cairn` skill,
+or ask the agent to checkpoint, to write the next one. `cairn uninstall` removes
+only those entries.
 
 ## Quick start
 
-Keep this repository separate from the ticket worktree. Write a checkpoint draft
-using [the template](templates/checkpoint.md). The draft is the outgoing agent's
-concise account of the task, decisions, verification, and next action.
+Keep this repository separate from the ticket worktree. For a host that cannot
+run the hooks, write a checkpoint draft using [the template](templates/checkpoint.md)
+or `cairn template`. The draft is the outgoing agent's concise account of the
+task, decisions, verification, and next action.
 
 ```sh
 cairn --cwd /path/to/ticket-worktree checkpoint \
@@ -60,7 +62,9 @@ the prototype does not redact secrets automatically.
 The checkpoint lives in `.cairn/current.md` within that worktree and is locally
 ignored by Git. Large logs can live in `.cairn/evidence/` and be read on demand.
 Keep one active code writer per worktree and checkpoint meaningful changes before
-switching. A desktop chat needs filesystem access or an attached export.
+switching. A desktop chat without a shell needs an attached export. The manual
+commands above remain the interface for that host. `cairn install` does not
+post to Jira or GitHub, and it does not start an MCP server.
 
 ## Development
 

@@ -41,6 +41,7 @@ export interface Checkpoint {
   metadata: Metadata;
   body: string;
   drift: string[];
+  fingerprint: string;
 }
 
 export function prefersFlock(): boolean {
@@ -95,7 +96,7 @@ export function load(root: string): Checkpoint {
   if (!saved) throw new CairnError('No checkpoint in this worktree');
   const actual = snapshot(root);
   const drift = STATE_KEYS.filter((key) => actual[key] !== saved.metadata.state[key]);
-  return { metadata: saved.metadata, body: saved.body, drift };
+  return { metadata: saved.metadata, body: saved.body, drift, fingerprint: actual.fingerprint };
 }
 
 export function render(metadata: Metadata, body: string): string {
