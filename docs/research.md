@@ -20,6 +20,6 @@ The inspected [Entire handoff skill](https://github.com/entireio/skills/blob/mai
 falls back to an unscoped session list when worktree filtering finds no matches.
 This prototype instead requires an exact local checkpoint and reports absence.
 
-Decision: build a small independent prototype to evaluate the file contract and
-Git-state checks. No third-party implementation has been copied into this repo.
+Decision: build a small independent prototype, named cairn, to evaluate the
+file contract and Git-state checks. No third-party implementation has been copied into this repo.
 Reassess adoption after a real cross-agent trial; avoid building a memory platform.

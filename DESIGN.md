@@ -14,29 +14,32 @@ checkpoint generation, rework and review. No token savings are claimed yet.
 One worktree normally belongs to one ticket and has one active code writer.
 Jira holds work requirements; GitHub Issues holds personal requirements. Git
 holds code and durable technical decisions. AGENTS.md holds short standing rules.
-The local `.handoff/current.md` holds execution state. It is not a task board,
+The local `.cairn/current.md` holds execution state. It is not a task board,
 shared memory database, conversation archive, or source of authorization.
 
-The first checkpoint creates `.handoff/.gitignore` containing `*`, without
+The first checkpoint creates `.cairn/.gitignore` containing `*`, without
 editing project-level ignore rules. Each worktree owns its own directory. The
 helper rejects a tracked or symlinked state directory. Ignoring is not access
 control, and `git add -f` can still add ignored files.
 
 ## Record format
 
-One UTF-8 Markdown file contains a JSON object in an initial HTML comment and a
-human-readable body. JSON avoids a YAML dependency. Schema 1 records revision,
+One UTF-8 Markdown file contains a JSON object in an initial HTML comment,
+labeled `cairn`, and a human-readable body. JSON avoids a YAML dependency.
+Schema 1 records revision,
 ticket URL, timestamp, absolute worktree path, branch, HEAD, workspace fingerprint,
 and a digest of the body. The JSON comment is local metadata, not normally fed
 to the receiving agent; `resume` prints the body plus a small receipt on stderr.
 
 The fingerprint covers tracked staged and unstaged diffs, status, and names,
-modes and contents of nonignored untracked files. `.handoff` is excluded.
+modes and contents of nonignored untracked files. `.cairn` is excluded.
 Ignored files, environment variables, dependencies, remote issue changes, and
 nested submodule working-file contents are outside the fingerprint guarantee.
 Matching fingerprints do not prove tests passed or requirements remain current.
 
 ## Commands and failure behavior
+
+The executable is `cairn`.
 
 - `checkpoint` reads an agent-authored draft and machine-collects Git facts.
   It requires the expected revision and refuses a different ticket identity.
@@ -68,8 +71,13 @@ can take time on very large dirty worktrees even though it adds no model tokens.
 
 ## Platform and access
 
-Python 3.11+ and Git; Linux and macOS initially. Advisory locking uses `fcntl`.
-Windows support requires a tested lock implementation before being advertised.
+Node.js 20+ and Git; Linux and macOS initially. When `flock` from util-linux is
+on `PATH`, writers lock `.cairn/write.lock` with it and hold that lock until the
+process exits. Otherwise writers create the lock file exclusively and replace a
+leftover file whose recorded process is gone. `CAIRN_LOCK=file` selects that
+portable lock. Windows support requires a tested lock implementation before
+being advertised.
+
 No agent integration has yet been validated against live vendor applications.
 CLI/file access and manual Markdown attachment are the initial interfaces.
 

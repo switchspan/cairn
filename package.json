@@ -1,0 +1,29 @@
+{
+  "name": "cairn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local checkpoints for one ticket per Git worktree.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "cairn": "./dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/src/cli.js",
+    "prepare": "npm run build",
+    "test": "npm run build && node --test dist/tests/cairn.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

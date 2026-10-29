@@ -7,8 +7,8 @@ exported attachment; a file path alone does not grant access.
 ## Resume
 
 1. Select the ticket's exact worktree. Read the project's standing instructions.
-2. Run `python3 /path/to/worktree-handoff/handoff.py --cwd /path/to/worktree resume`.
-3. If the checkpoint is stale, inspect it with `resume --allow-stale`, reconcile
+2. Run `cairn --cwd /path/to/worktree resume`.
+3. If the checkpoint is stale, inspect it with `cairn resume --allow-stale`, reconcile
    the actual diff and recorded evidence, and update the checkpoint before
    relying on old verification. Never use a different worktree as a fallback.
 4. Load the listed files and requirements only as needed for the next action.
@@ -17,12 +17,12 @@ exported attachment; a file path alone does not grant access.
 
 ## Checkpoint
 
-1. Stop other writers to this worktree. Use `status` to obtain the current revision;
+1. Stop other writers to this worktree. Use `cairn status` to obtain the current revision;
    use revision 0 only when no checkpoint exists.
 2. Write a concise Markdown draft using the template. Target 500–1,000 tokens;
    preserve necessary constraints even if that target is exceeded. Reference
    evidence instead of copying logs, transcripts, specifications, or source code.
-3. Use `checkpoint --ticket URL --file DRAFT --expected-revision N`.
+3. Use `cairn checkpoint --ticket URL --file DRAFT --expected-revision N`.
 4. Keep the revision receipt. If there is a conflict, read the new checkpoint
    and reconcile it; never blindly retry with a higher revision.
 
