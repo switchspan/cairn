@@ -13,3 +13,17 @@ create remote repositories without user authorization.
 Verify with `npm test` and `git diff --check`.
 Use disposable repositories for tests. Preserve existing worktrees and changes.
 Keep runtime state, diagnostic output, and credentials out of Git.
+
+## Agent skills
+
+### Issue tracker
+
+Personal requirements live in GitHub Issues on `switchspan/cairn`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

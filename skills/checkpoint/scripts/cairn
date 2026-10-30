@@ -1,0 +1,51 @@
+#!/bin/sh
+# Runs the cairn CLI that ships beside this script. Without Node.js 20+, a hook
+# reports that checkpoints are disabled and lets the session continue.
+set -u
+
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$(dirname -- "$self")/$target ;;
+  esac
+done
+dir=$(CDPATH='' cd -- "$(dirname -- "$self")" && pwd -P)
+
+if command -v node >/dev/null 2>&1 \
+  && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' 2>/dev/null; then
+  exec node "$dir/lib/cli.js" "$@"
+fi
+
+message='cairn needs Node.js 20+ on PATH; checkpoints are disabled.'
+command=''
+event=''
+host=''
+previous=''
+for argument in "$@"; do
+  if [ "$previous" = '--host' ]; then
+    host=$argument
+  elif [ -z "$command" ]; then
+    case $argument in
+      hook|checkpoint|status|resume|export|template|install|uninstall) command=$argument ;;
+    esac
+  elif [ "$command" = 'hook' ] && [ -z "$event" ]; then
+    event=$argument
+  fi
+  previous=$argument
+done
+
+if [ "$command" != 'hook' ]; then
+  printf 'cairn: %s\n' "$message" >&2
+  exit 1
+fi
+cat >/dev/null 2>&1 || true
+if [ "$event" = 'session-start' ]; then
+  if [ "$host" = 'cursor' ]; then
+    printf '{"additional_context":"%s"}\n' "$message"
+  else
+    printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$message"
+  fi
+fi
+exit 0

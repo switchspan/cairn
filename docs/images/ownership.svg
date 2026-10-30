@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="188" viewBox="0 0 840 188" role="img">
+  <title>Where cairn keeps each kind of state</title>
+  <rect width="840" height="188" rx="12" fill="#f6f3ee"/>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" fill="#24302c">
+    <g>
+      <rect x="16" y="16" width="192" height="112" rx="8" fill="#ffffff" stroke="#c9c2b6"/>
+      <text x="32" y="44" font-size="15" font-weight="600">Ticket</text>
+      <text x="32" y="70" font-size="13" fill="#3d4a45">Jira for work.</text>
+      <text x="32" y="90" font-size="13" fill="#3d4a45">GitHub Issues for</text>
+      <text x="32" y="108" font-size="13" fill="#3d4a45">personal work.</text>
+    </g>
+    <g>
+      <rect x="222" y="16" width="192" height="112" rx="8" fill="#ffffff" stroke="#c9c2b6"/>
+      <text x="238" y="44" font-size="15" font-weight="600">Git</text>
+      <text x="238" y="70" font-size="13" fill="#3d4a45">Code and durable</text>
+      <text x="238" y="90" font-size="13" fill="#3d4a45">technical decisions.</text>
+    </g>
+    <g>
+      <rect x="428" y="16" width="192" height="112" rx="8" fill="#ffffff" stroke="#c9c2b6"/>
+      <text x="444" y="44" font-size="15" font-weight="600">AGENTS.md</text>
+      <text x="444" y="70" font-size="13" fill="#3d4a45">Short standing rules</text>
+      <text x="444" y="90" font-size="13" fill="#3d4a45">for every session.</text>
+    </g>
+    <g>
+      <rect x="634" y="16" width="190" height="112" rx="8" fill="#e7efe9" stroke="#6d8a78"/>
+      <text x="650" y="44" font-size="15" font-weight="600">.cairn/current.md</text>
+      <text x="650" y="70" font-size="13" fill="#3d4a45">Execution checkpoint</text>
+      <text x="650" y="90" font-size="13" fill="#3d4a45">for this worktree.</text>
+      <text x="650" y="110" font-size="13" fill="#3d4a45">Git ignores it.</text>
+    </g>
+    <text x="16" y="160" font-size="13" fill="#3d4a45">One worktree, one ticket, one active code writer. The checkpoint reports state. It does not grant permission.</text>
+  </g>
+</svg>

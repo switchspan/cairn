@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DIRECTORY, load, rootFor, type Checkpoint } from './lib.js';
+import { DIRECTORY, hasCheckpoint, inferTicket, load, rootFor, type Checkpoint } from './lib.js';
 
 export type Host = 'cursor' | 'claude' | 'codex';
 export type HookEvent = 'session-start' | 'stop';
@@ -12,11 +12,18 @@ export function runHook(event: HookEvent, host: Host, stdin: string): string {
     const directory = worktreeFromPayload(parsePayload(stdin));
     if (!directory) return '';
     const root = rootFor(directory);
+    if (!hasCheckpoint(root)) {
+      if (event === 'stop') return '';
+      const ticket = inferTicket(root);
+      return ticket ? renderSession(host, discoveryMessage(ticket)) : '';
+    }
     const checkpoint = load(root);
     if (event === 'session-start') return renderSession(host, sessionStartMessage(checkpoint));
+    // Cursor's only stop output submits a new user turn, so it gets no reminder.
+    if (host === 'cursor') return '';
     const message = takeStopMessage(root, checkpoint);
     if (!message) return '';
-    return renderStop(host, message);
+    return `${JSON.stringify({ systemMessage: message })}\n`;
   } catch {
     return '';
   }
@@ -44,12 +51,20 @@ function parsePayload(stdin: string): unknown {
   return JSON.parse(stdin);
 }
 
+// A drifted body is still injected (ADR 0001); the banner carries the warning.
 function sessionStartMessage(checkpoint: Checkpoint): string {
   const { metadata, body, drift } = checkpoint;
-  if (drift.length > 0) {
-    return `Stale checkpoint; reconcile drift before continuing. Use --allow-stale to inspect. Drift: ${drift.join(', ')}.`;
-  }
-  return `Cairn checkpoint (${metadata.ticket}, revision ${metadata.revision}, updated ${metadata.updated})\n\n${body}`;
+  const heading = `Cairn checkpoint (${metadata.ticket}, revision ${metadata.revision}, updated ${metadata.updated})`;
+  if (drift.length === 0) return `${heading}\n\n${body}`;
+  const banner = `DRIFT: ${drift.join(', ')}. The code changed after this checkpoint was written. `
+    + 'Reconcile it against the actual diff before trusting its Verification section, '
+    + 'then write a new checkpoint with the cairn skill.';
+  return `${heading}\n${banner}\n\n${body}`;
+}
+
+function discoveryMessage(ticket: string): string {
+  return `No cairn checkpoint exists yet for ${ticket} in this worktree. `
+    + 'When the user asks to checkpoint, write one with the cairn skill.';
 }
 
 function takeStopMessage(root: string, checkpoint: Checkpoint): string | null {
@@ -69,7 +84,7 @@ function takeStopMessage(root: string, checkpoint: Checkpoint): string | null {
   }
   const revision = checkpoint.metadata.revision;
   const drift = checkpoint.drift.join(', ');
-  return `Cairn revision ${revision} is stale (drift: ${drift}); write a checkpoint with the cairn skill before switching agents.`;
+  return `Cairn revision ${revision} is stale (drift: ${drift}). Ask the agent to checkpoint before switching agents.`;
 }
 
 function readMarker(file: string): string | null {
@@ -95,9 +110,4 @@ function renderSession(host: Host, text: string): string {
       additionalContext: text,
     },
   })}\n`;
-}
-
-function renderStop(host: Host, text: string): string {
-  if (host === 'cursor') return `${JSON.stringify({ followup_message: text })}\n`;
-  return `${JSON.stringify({ decision: 'block', reason: text })}\n`;
 }

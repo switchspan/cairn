@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { atomicWrite, prefersFlock } from '../src/lib.js';
 
-const CLI = fileURLToPath(new URL('../src/cli.js', import.meta.url));
+const SHIPPED = fileURLToPath(new URL('../../skills/checkpoint/scripts/lib/', import.meta.url));
+const FRESH = fileURLToPath(new URL('../src/', import.meta.url));
+const CLI = path.join(SHIPPED, 'cli.js');
+const WRAPPER = fileURLToPath(new URL('../../skills/checkpoint/scripts/cairn', import.meta.url));
 const TICKET = 'https://example.invalid/PAY-142';
 
 interface Result {
@@ -304,7 +307,7 @@ test('template prints the draft headings', () => {
   assert.match(result.stdout, /## Next action/);
 });
 
-test('session start injects a fresh body and a stale refusal', withFixture((fx) => {
+test('session start injects a fresh body and a drifted body under a banner', withFixture((fx) => {
   const absent = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(absent.status, 0, absent.stderr);
   assert.equal(absent.stdout, '');
@@ -351,11 +354,56 @@ test('session start injects a fresh body and a stale refusal', withFixture((fx) 
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const stale = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(stale.status, 0, stale.stderr);
-  const refusal = JSON.parse(stale.stdout) as { additional_context?: string };
-  assert.match(refusal.additional_context ?? '', /Drift: fingerprint/);
-  assert.doesNotMatch(refusal.additional_context ?? '', /fix retries/);
+  const drifted = JSON.parse(stale.stdout) as { additional_context?: string };
+  assert.match(drifted.additional_context ?? '', /\nDRIFT: fingerprint\. .*Verification/);
+  assert.match(drifted.additional_context ?? '', /Objective: fix retries/);
   assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
   assert.equal(runInput(['hook', 'session-start', '--host', 'cursor'], '{').stdout, '');
+}));
+
+test('checkpoint reads stdin and infers a Jira key from the branch', withFixture((fx) => {
+  fx.git('checkout', '-b', 'feature/PAY-142-retries');
+  const first = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: from stdin.\n');
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /^Checkpoint 1 for PAY-142: /);
+  assert.equal(fx.run(['resume']).stdout, 'Objective: from stdin.\n');
+
+  fx.git('checkout', '-b', 'PAY-999-other');
+  const kept = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '1'], 'Objective: still 142.\n');
+  assert.equal(kept.status, 0, kept.stderr);
+  assert.match(kept.stdout, /^Checkpoint 2 for PAY-142: /);
+}));
+
+test('a GitHub issue number resolves against a github.com origin', withFixture((fx) => {
+  fx.git('remote', 'add', 'origin', 'git@github.com:acme/pay.git');
+  fx.git('checkout', '-b', 'fix/142-retries');
+  const ssh = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: ssh.\n');
+  assert.match(ssh.stdout, /for https:\/\/github\.com\/acme\/pay\/issues\/142: /, ssh.stderr);
+
+  const other = path.join(fx.base, 'issue-worktree');
+  fx.git('worktree', 'add', '-b', 'issue-7', other);
+  fx.git('remote', 'set-url', 'origin', 'https://github.com/acme/pay.git');
+  const https = runInput(['--cwd', other, 'checkpoint', '--expected-revision', '0'], 'Objective: https.\n');
+  assert.match(https.stdout, /for https:\/\/github\.com\/acme\/pay\/issues\/7: /, https.stderr);
+}));
+
+test('checkpoint without an inferable ticket asks for --ticket', withFixture((fx) => {
+  const result = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: x.\n');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /pass --ticket/);
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'current.md')), false);
+}));
+
+test('session start names the ticket only on a ticket branch without a checkpoint', withFixture((fx) => {
+  const payload = JSON.stringify({ cwd: fx.repo });
+  assert.equal(runInput(['hook', 'session-start', '--host', 'claude'], payload).stdout, '');
+  fx.git('checkout', '-b', 'PAY-142-retries');
+  const result = runInput(['hook', 'session-start', '--host', 'claude'], payload);
+  const context = (JSON.parse(result.stdout) as { hookSpecificOutput?: { additionalContext?: string } })
+    .hookSpecificOutput?.additionalContext ?? '';
+  assert.match(context, /No cairn checkpoint exists yet for PAY-142/);
+  assert.equal(runInput(['hook', 'stop', '--host', 'claude'], payload).stdout, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn')), false);
 }));
 
 test('stop reminds once for a drifted fingerprint', withFixture((fx) => {
@@ -367,26 +415,25 @@ test('stop reminds once for a drifted fingerprint', withFixture((fx) => {
 
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const claude = runInput(['hook', 'stop', '--host', 'claude'], JSON.stringify({ cwd: fx.repo }));
-  const blocked = JSON.parse(claude.stdout) as { decision?: string; reason?: string };
-  assert.deepEqual(Object.keys(blocked), ['decision', 'reason']);
-  assert.equal(blocked.decision, 'block');
-  assert.match(blocked.reason ?? '', /Cairn revision 1 is stale \(drift: fingerprint\)/);
+  const notice = JSON.parse(claude.stdout) as { systemMessage?: string };
+  assert.deepEqual(Object.keys(notice), ['systemMessage']);
+  assert.match(notice.systemMessage ?? '', /Cairn revision 1 is stale \(drift: fingerprint\)/);
   const marker = fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8');
   assert.match(marker, /^[0-9a-f]{64}\n$/);
 
-  const again = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  const again = runInput(['hook', 'stop', '--host', 'codex'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(again.stdout, '');
   assert.equal(fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8'), marker);
   assert.doesNotMatch(fx.git('status', '--porcelain'), /stop-nudge/);
 }));
 
-test('cursor stop uses followup_message', withFixture((fx) => {
+test('cursor stop stays silent because its only output starts a new turn', withFixture((fx) => {
   fx.save();
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const result = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
-  const payload = JSON.parse(result.stdout) as { followup_message?: string };
-  assert.deepEqual(Object.keys(payload), ['followup_message']);
-  assert.match(payload.followup_message ?? '', /revision 1/);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
 }));
 
 test('install merges host config and uninstall removes only cairn', () => {
@@ -415,8 +462,12 @@ test('install merges host config and uninstall removes only cairn', () => {
 
     const installed = runInput(['install', '--home', home]);
     assert.equal(installed.status, 0, installed.stderr);
-    assert.match(installed.stdout, /claude: skipped/);
+    assert.match(installed.stdout, /claude: use the plugin: \/plugin marketplace add /);
     assert.equal(fs.existsSync(path.join(home, '.claude')), false);
+    const skill = path.join(home, '.agents', 'skills', 'cairn');
+    assert.match(fs.readFileSync(path.join(skill, 'SKILL.md'), 'utf8'), /^name: cairn$/m);
+    const template = spawnSync(path.join(skill, 'scripts', 'cairn'), ['template'], { encoding: 'utf8' });
+    assert.match(template.stdout, /## Next action/, template.stderr);
     const cursor = JSON.parse(fs.readFileSync(cursorHooks, 'utf8')) as {
       version: number;
       unrelated: boolean;
@@ -427,7 +478,7 @@ test('install merges host config and uninstall removes only cairn', () => {
     assert.equal(cursor.hooks.sessionStart[0]?.command, 'echo keep-session');
     assert.equal(hookCommands(cursor, 'session-start').length, 1);
     assert.equal(hookCommands(cursor, 'stop').length, 1);
-    assert.match(fs.readFileSync(path.join(cursorDir, 'skills', 'cairn', 'SKILL.md'), 'utf8'), /name: cairn/);
+    assert.ok(hookCommands(cursor, 'session-start')[0]?.startsWith(`'${path.join(skill, 'scripts', 'cairn')}'`));
     const codex = JSON.parse(fs.readFileSync(codexHooks, 'utf8')) as {
       theme: string;
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
@@ -466,8 +517,42 @@ test('install merges host config and uninstall removes only cairn', () => {
     assert.deepEqual(restoredCodex.hooks.SessionStart, [{
       hooks: [{ type: 'command', command: 'echo keep-codex' }],
     }]);
-    assert.equal(fs.existsSync(path.join(cursorDir, 'skills', 'cairn')), false);
-    assert.equal(fs.existsSync(path.join(codexDir, 'skills', 'cairn')), false);
+    assert.equal(fs.existsSync(skill), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('install removes the old Claude Code hooks and per-host skill copies', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-home-'));
+  try {
+    const claudeDir = path.join(home, '.claude');
+    fs.mkdirSync(path.join(claudeDir, 'skills', 'cairn'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.grok'));
+    const settings = path.join(claudeDir, 'settings.json');
+    fs.writeFileSync(settings, `${JSON.stringify({
+      model: 'opus',
+      hooks: {
+        SessionStart: [{ hooks: [
+          { type: 'command', command: "'node' '/old/cli.js' hook session-start --host claude" },
+          { type: 'command', command: 'echo keep-claude' },
+        ] }],
+        Stop: [{ hooks: [{ type: 'command', command: "'node' '/old/cli.js' hook stop --host claude" }] }],
+      },
+    }, null, 2)}\n`);
+
+    const installed = runInput(['install', '--home', home]);
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /grok: skill only/);
+    assert.ok(fs.existsSync(path.join(home, '.agents', 'skills', 'cairn', 'SKILL.md')));
+    assert.equal(fs.existsSync(path.join(claudeDir, 'skills', 'cairn')), false);
+    const cleaned = JSON.parse(fs.readFileSync(settings, 'utf8')) as {
+      model: string;
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }>; Stop?: unknown };
+    };
+    assert.equal(cleaned.model, 'opus');
+    assert.deepEqual(cleaned.hooks.SessionStart, [{ hooks: [{ type: 'command', command: 'echo keep-claude' }] }]);
+    assert.equal(cleaned.hooks.Stop, undefined);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -489,6 +574,86 @@ test('install refuses an unreadable hooks file without replacing it', () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('the committed skill build matches a fresh build of src', () => {
+  const javascript = (directory: string) => fs.readdirSync(directory).filter((name) => name.endsWith('.js')).sort();
+  assert.deepEqual(javascript(SHIPPED), javascript(FRESH), 'run npm run build and commit the skill build');
+  for (const name of javascript(FRESH)) {
+    assert.equal(
+      fs.readFileSync(path.join(SHIPPED, name), 'utf8'),
+      fs.readFileSync(path.join(FRESH, name), 'utf8'),
+      `${name} is stale; run npm run build and commit the skill build`,
+    );
+  }
+});
+
+test('the wrapper runs the CLI through a symlink', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-bin-'));
+  try {
+    const link = path.join(base, 'cairn');
+    fs.symlinkSync(WRAPPER, link);
+    const result = spawnSync(link, ['template'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /## Next action/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('without Node the wrapper reports and lets hooks continue', () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-nonode-'));
+  try {
+    for (const tool of ['dirname', 'readlink', 'cat']) {
+      const found = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
+      fs.symlinkSync(found, path.join(bin, tool));
+    }
+    const run = (args: string[]) => spawnSync('/bin/sh', [WRAPPER, ...args], {
+      encoding: 'utf8',
+      input: '{}',
+      env: { PATH: bin },
+    });
+    const claude = run(['hook', 'session-start', '--host', 'claude']);
+    assert.equal(claude.status, 0, claude.stderr);
+    const context = (JSON.parse(claude.stdout) as { hookSpecificOutput?: { additionalContext?: string } })
+      .hookSpecificOutput?.additionalContext;
+    assert.match(context ?? '', /needs Node\.js 20\+/);
+    const cursor = JSON.parse(run(['hook', 'session-start', '--host', 'cursor']).stdout) as {
+      additional_context?: string;
+    };
+    assert.match(cursor.additional_context ?? '', /checkpoints are disabled/);
+    const stop = run(['hook', 'stop', '--host', 'claude']);
+    assert.equal(stop.status, 0);
+    assert.equal(stop.stdout, '');
+    const status = run(['status']);
+    assert.equal(status.status, 1);
+    assert.match(status.stderr, /needs Node\.js 20\+/);
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test('the Claude Code plugin hooks run the skill wrapper', withFixture((fx) => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8')) as {
+    hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+  };
+  const command = (event: string) => config.hooks[event]?.[0]?.hooks[0]?.command ?? '';
+  const run = (event: string) => spawnSync('/bin/sh', ['-c', command(event)], {
+    encoding: 'utf8',
+    input: JSON.stringify({ cwd: fx.repo }),
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: root },
+  });
+  fx.save();
+  fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
+  const start = run('SessionStart');
+  assert.equal(start.status, 0, start.stderr);
+  assert.match(start.stdout, /DRIFT: fingerprint/);
+  const stop = run('Stop');
+  assert.equal(stop.status, 0, stop.stderr);
+  assert.match(stop.stdout, /"systemMessage":"Cairn revision 1 is stale/);
+  const shim = spawnSync(path.join(root, 'bin', 'cairn'), ['--cwd', fx.repo, 'status'], { encoding: 'utf8' });
+  assert.match(shim.stdout, /"revision": 1/, shim.stderr);
+}));
 
 test('hook usage errors stay on stderr', () => {
   const result = runInput(['hook', 'session-start']);

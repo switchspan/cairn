@@ -55,21 +55,35 @@ export function rootFor(cwd: string): string {
   return fs.realpathSync(shown);
 }
 
-export function checkpoint(root: string, ticket: string, file: string, expectedRevision: number): string {
-  const body = `${readUtf8(file).trim()}\n`;
+export function checkpoint(
+  root: string,
+  requestedTicket: string | undefined,
+  draft: string,
+  expectedRevision: number,
+): string {
+  const body = `${draft.trim()}\n`;
   if (!body.trim()) throw new CairnError('Checkpoint body is empty');
   if (Buffer.byteLength(body) > MAX_BODY_BYTES) {
     throw new CairnError('Checkpoint exceeds 12,000 UTF-8 bytes; link to detailed evidence');
   }
-  if (!ticket.trim()) throw new CairnError('Ticket must not be empty');
+  if (requestedTicket !== undefined && !requestedTicket.trim()) {
+    throw new CairnError('Ticket must not be empty');
+  }
   const { directory, current } = locate(root);
   let revision = 0;
+  let ticket = '';
   withWriter(directory, () => {
     const prior = readCheckpoint(current);
     revision = prior ? prior.metadata.revision : 0;
     if (revision !== expectedRevision) {
       throw new CairnError(`Revision conflict: expected ${expectedRevision}, found ${revision}`);
     }
+    // An existing checkpoint owns the ticket identity; inference only names a first one.
+    const resolved = requestedTicket ?? prior?.metadata.ticket ?? inferTicket(root);
+    if (!resolved) {
+      throw new CairnError('Cannot infer the ticket from the branch; pass --ticket with an issue URL or Jira key');
+    }
+    ticket = resolved;
     if (prior && prior.metadata.ticket !== ticket) {
       throw new CairnError('Ticket mismatch: use a separate worktree for a different ticket');
     }
@@ -87,7 +101,41 @@ export function checkpoint(root: string, ticket: string, file: string, expectedR
     }
     atomicWrite(current, render(metadata, body));
   });
-  return `Checkpoint ${revision + 1}: ${current}`;
+  return `Checkpoint ${revision + 1} for ${ticket}: ${current}`;
+}
+
+export function hasCheckpoint(root: string): boolean {
+  return lstatOrNull(locate(root).current) !== null;
+}
+
+// Names the ticket from the branch: a Jira key such as PAY-142, or a GitHub
+// issue number such as 142-fix or issue-142 resolved against a github.com origin.
+export function inferTicket(root: string): string | null {
+  const branch = currentBranch(root);
+  if (!branch) return null;
+  const jira = /(?:^|[/_-])([A-Z][A-Z0-9]+-\d+)(?=$|[/_-])/.exec(branch);
+  if (jira?.[1]) return jira[1];
+  const leaf = branch.slice(branch.lastIndexOf('/') + 1);
+  const issue = /^(?:(?:issues?|gh)[-_]?)?(\d+)(?:$|[-_])/i.exec(leaf);
+  if (!issue?.[1]) return null;
+  const repository = githubRepository(root);
+  return repository ? `https://github.com/${repository}/issues/${Number(issue[1])}` : null;
+}
+
+function currentBranch(root: string): string | null {
+  const result = spawnSync('git', ['-C', root, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
+    encoding: 'utf8',
+  });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout.trim() || null;
+}
+
+function githubRepository(root: string): string | null {
+  const result = spawnSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return null;
+  const match = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/
+    .exec(result.stdout.trim());
+  return match?.[1] ?? null;
 }
 
 export function load(root: string): Checkpoint {
@@ -384,11 +432,13 @@ function sorted(value: unknown): unknown {
   return value;
 }
 
-function readUtf8(file: string): string {
+export function readUtf8(file: string | number): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file));
   } catch (error) {
-    if (error instanceof TypeError) throw new CairnError(`Invalid UTF-8 in ${file}`);
+    if (error instanceof TypeError) {
+      throw new CairnError(`Invalid UTF-8 in ${file === 0 ? 'standard input' : String(file)}`);
+    }
     throw error;
   }
 }

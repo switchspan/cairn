@@ -6,12 +6,10 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "cairn": "./dist/src/cli.js"
+    "cairn": "./skills/checkpoint/scripts/cairn"
   },
   "files": [
-    "dist/src",
-    "adapters",
-    "templates",
+    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -19,9 +17,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/src/cli.js",
+    "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
-    "test": "npm run build && node --test dist/tests/cairn.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test dist/tests/cairn.test.js"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

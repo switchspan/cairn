@@ -4,7 +4,7 @@ import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { runHook, type HookEvent, type Host } from './hook.js';
 import { installAdapters, templateText, uninstallAdapters } from './install.js';
-import { CairnError, checkpoint, isNodeError, load, render, rootFor } from './lib.js';
+import { CairnError, checkpoint, isNodeError, load, readUtf8, render, rootFor } from './lib.js';
 
 const HELP = `Usage: cairn [--cwd DIR] <command> [options]
 
@@ -17,13 +17,16 @@ Commands:
   export      Print a portable checkpoint snapshot
   template    Print the checkpoint draft template
   hook        Print host hook output for session-start or stop
-  install     Register hooks and the checkpoint skill
-  uninstall   Remove hooks and the checkpoint skill
+  install     Install the skill for Codex, Cursor, and Grok, and hooks for
+              Codex and Cursor; Claude Code uses the plugin instead
+  uninstall   Remove those hooks and the skill
 
 checkpoint:
-  --ticket URL              Full Jira or GitHub issue URL
-  --file PATH               Markdown draft, relative to the invocation directory
   --expected-revision N     Revision this draft replaces; 0 creates the first
+  --file PATH               Markdown draft, relative to the invocation directory;
+                            defaults to standard input
+  --ticket URL|KEY          Issue URL or Jira key; defaults to the existing
+                            checkpoint's ticket, then to one inferred from the branch
 
 resume:
   --allow-stale             Read a stale checkpoint for reconciliation
@@ -79,7 +82,8 @@ export function main(argv: string[]): number {
     }
     const root = rootFor(args.cwd);
     if (args.command === 'checkpoint') {
-      const line = checkpoint(root, args.ticket ?? '', args.file ?? '', args.expectedRevision ?? Number.NaN);
+      const draft = readDraft(args.file);
+      const line = checkpoint(root, args.ticket, draft, args.expectedRevision ?? Number.NaN);
       process.stdout.write(`${line}\n`);
       return 0;
     }
@@ -175,8 +179,6 @@ function parseArgs(argv: string[]): Arguments {
     const ticket = values.get('ticket');
     const file = values.get('file');
     const expected = values.get('expected-revision');
-    if (ticket === undefined) throw new UsageError('Missing --ticket');
-    if (file === undefined) throw new UsageError('Missing --file');
     if (expected === undefined) throw new UsageError('Missing --expected-revision');
     return {
       cwd,
@@ -218,6 +220,12 @@ function integerFlag(value: string, flag: string): number {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) throw new UsageError(`${flag} must be an integer`);
   return parsed;
+}
+
+function readDraft(file: string | undefined): string {
+  if (file !== undefined) return readUtf8(file);
+  if (process.stdin.isTTY) throw new UsageError('Pass --file or pipe the draft on standard input');
+  return readUtf8(0);
 }
 
 function readStdin(): string {

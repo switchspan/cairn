@@ -1,0 +1,13 @@
+{
+  "name": "cairn-checkpoints",
+  "owner": {
+    "name": "Kenneth Taylor"
+  },
+  "plugins": [
+    {
+      "name": "cairn",
+      "source": "./",
+      "description": "Local checkpoints for one ticket per Git worktree, resumed automatically in each new session."
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="300" viewBox="0 0 840 300" role="img">
+  <title>How an agent switch uses a cairn checkpoint</title>
+  <rect width="840" height="300" rx="12" fill="#f6f3ee"/>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" fill="#24302c">
+    <text x="28" y="36" font-size="14" font-weight="600">Same worktree</text>
+    <rect x="16" y="48" width="500" height="236" rx="8" fill="#ffffff" stroke="#c9c2b6"/>
+
+    <rect x="32" y="66" width="200" height="36" rx="6" fill="#f6f3ee" stroke="#c9c2b6"/>
+    <text x="44" y="89" font-size="13">Agent writes a draft</text>
+    <path d="M244 84h20M256 78l10 6-10 6" fill="none" stroke="#6d8a78" stroke-width="1.5"/>
+    <rect x="276" y="66" width="220" height="36" rx="6" fill="#e7efe9" stroke="#6d8a78"/>
+    <text x="288" y="89" font-size="13">cairn checkpoint</text>
+
+    <rect x="32" y="118" width="200" height="36" rx="6" fill="#f6f3ee" stroke="#c9c2b6"/>
+    <text x="44" y="141" font-size="13">New chat starts</text>
+    <path d="M244 136h20M256 130l10 6-10 6" fill="none" stroke="#6d8a78" stroke-width="1.5"/>
+    <rect x="276" y="118" width="220" height="36" rx="6" fill="#e7efe9" stroke="#6d8a78"/>
+    <text x="288" y="141" font-size="13">session-start hook</text>
+
+    <rect x="32" y="170" width="464" height="52" rx="6" fill="#f6f3ee" stroke="#c9c2b6"/>
+    <text x="44" y="192" font-size="13">Fresh: inject the checkpoint body.</text>
+    <text x="44" y="210" font-size="13">Drifted: inject it under a DRIFT banner.</text>
+
+    <rect x="32" y="236" width="464" height="32" rx="6" fill="#f6f3ee" stroke="#c9c2b6"/>
+    <text x="44" y="257" font-size="13">The cairn skill writes the next revision.</text>
+
+    <text x="540" y="36" font-size="14" font-weight="600">No local read</text>
+    <rect x="528" y="48" width="296" height="236" rx="8" fill="#ffffff" stroke="#c9c2b6"/>
+    <rect x="544" y="68" width="264" height="36" rx="6" fill="#e7efe9" stroke="#6d8a78"/>
+    <text x="556" y="91" font-size="13">cairn export</text>
+    <text x="544" y="128" font-size="13">A dated snapshot to attach.</text>
+    <text x="544" y="148" font-size="13">It does not include the code.</text>
+    <rect x="544" y="168" width="264" height="36" rx="6" fill="#f6f3ee" stroke="#c9c2b6"/>
+    <text x="556" y="191" font-size="13">Code travels as a commit or patch</text>
+    <text x="544" y="230" font-size="13">Review the export before sharing.</text>
+    <text x="544" y="250" font-size="13">It can contain local paths.</text>
+  </g>
+</svg>
