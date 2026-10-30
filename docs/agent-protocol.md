@@ -1,9 +1,10 @@
 # Agent handoff protocol
 
-`cairn install` registers a session-start hook and a checkpoint skill for Cursor,
-Claude Code, and Codex when those configuration directories already exist. The
-hook injects the current checkpoint. The skill writes the next one. Use the
-steps below when a host cannot run those adapters.
+The Claude Code plugin, and `cairn install` for Codex and Cursor, add a
+session-start hook and the checkpoint skill. The hook injects the current
+checkpoint, under a `DRIFT` banner when the code has changed since. The skill
+writes the next one, and resumes on request where no hook can inject, as in
+Grok Build. Use the steps below when a host has neither.
 
 A desktop chat without local filesystem access needs an exported attachment; a
 file path alone does not grant access.
@@ -26,7 +27,9 @@ file path alone does not grant access.
 2. Write a concise Markdown draft using the template. Target 500–1,000 tokens;
    preserve necessary constraints even if that target is exceeded. Reference
    evidence instead of copying logs, transcripts, specifications, or source code.
-3. Use `cairn checkpoint --ticket URL --file DRAFT --expected-revision N`.
+3. Pipe the draft to `cairn checkpoint --expected-revision N`, or pass
+   `--file DRAFT`. Add `--ticket URL|KEY` only when the command cannot infer
+   the ticket from the branch.
 4. Keep the revision receipt. If there is a conflict, read the new checkpoint
    and reconcile it; never blindly retry with a higher revision.
 

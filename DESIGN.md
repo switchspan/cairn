@@ -41,8 +41,12 @@ Matching fingerprints do not prove tests passed or requirements remain current.
 
 The executable is `cairn`.
 
-- `checkpoint` reads an agent-authored draft and machine-collects Git facts.
-  It requires the expected revision and refuses a different ticket identity.
+- `checkpoint` reads an agent-authored draft from `--file` or standard input
+  and machine-collects Git facts. It requires the expected revision and refuses
+  a different ticket identity. A ticket is an issue URL or a bare Jira key. The
+  existing checkpoint's ticket wins; a first checkpoint without `--ticket`
+  infers one from the branch (a Jira key, or a GitHub issue number resolved
+  against a `github.com` `origin`) and otherwise fails.
 - `status` reports identity, revision and changed state fields. Missing or invalid
   checkpoints are errors. Staleness is represented in the JSON `drift` list.
 - `resume` refuses stale state unless `--allow-stale` explicitly requests reading
@@ -78,20 +82,38 @@ leftover file whose recorded process is gone. `CAIRN_LOCK=file` selects that
 portable lock. Windows support requires a tested lock implementation before
 being advertised.
 
-`cairn install` merges user-level hooks and copies one checkpoint skill into
-each of `~/.cursor`, `~/.claude`, and `~/.codex` that already exists. Session
-start runs `cairn hook session-start` and injects a fresh body, or a short
-stale refusal with drift field names. Stop runs `cairn hook stop` and emits one
-reminder per drifted fingerprint. The skill calls `cairn template` and
-`cairn checkpoint`. Hooks read the worktree from their stdin payload, fail open,
-and do not select another worktree. MCP and remote publication stay deferred.
+The skill folder `skills/checkpoint` is the portable unit
+([ADR 0002](docs/adr/0002-ship-the-cli-inside-the-skill-folder.md)): it holds
+`SKILL.md`, the template, the committed CLI build, and `scripts/cairn`, a POSIX
+shell wrapper. Without Node.js 20+, the wrapper makes a session-start hook
+inject a one-line notice, keeps stop hooks silent, and fails other commands.
+
+Each host gets an adapter. Claude Code installs this repository as a plugin and
+its own marketplace; the plugin's hooks run the wrapper, and `bin/cairn` puts
+the CLI on the agent's `PATH`. `cairn install` copies the skill to
+`~/.agents/skills/cairn`, which Codex, Cursor, and Grok Build read, and merges
+hooks into `~/.codex/hooks.json` and `~/.cursor/hooks.json` that run the
+installed wrapper. Grok Build documents no session-start context injection, so
+it gets the skill only and the user asks it to resume. Install also removes the
+`~/.claude` hooks and per-host skill copies written by earlier versions.
+
+Session start runs `cairn hook session-start`. It injects a fresh body, or a
+drifted body under a `DRIFT` banner naming the fields
+([ADR 0001](docs/adr/0001-inject-drifted-checkpoint-at-session-start.md)).
+Without a checkpoint, it names the inferred ticket on a ticket branch and stays
+silent elsewhere. Stop runs `cairn hook stop` and emits one reminder per
+drifted fingerprint, only where a checkpoint exists. Hooks read the worktree
+from their stdin payload, fail open, and do not select another worktree. MCP
+and remote publication stay deferred.
 
 ## Validation and next increments
 
 Automated tests cover two worktrees, staged/unstaged/untracked drift, HEAD drift,
 revision and ticket conflicts, concurrent checkpoint writers, failed replacement,
-ignored evidence, exports, rejection of invalid storage paths, hook output, and
-install merging disposable home directories.
+ignored evidence, exports, rejection of invalid storage paths, ticket inference,
+stdin drafts, hook output, the plugin hooks, the wrapper with and without Node,
+the committed build matching `src`, and install merging disposable home
+directories.
 
 Before claiming usefulness, run Claude → Codex → Grok on a real ticket and test
 a desktop attachment handoff and another-machine transfer. Measure repeated
