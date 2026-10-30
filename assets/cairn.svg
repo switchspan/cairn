@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">cairn</title>
+  <desc id="desc">Local checkpoints for one ticket per Git worktree.</desc>
+  <rect width="1200" height="400" fill="#1e1c18"/>
+  <g fill="none" stroke="#3a352c" stroke-width="1.25" opacity="0.9">
+    <path d="M28 92c70 36 120-28 196 8 54 26 78 18 112-6"/>
+    <path d="M16 148c86 28 132-40 214 2 48 24 90 10 130-18"/>
+    <path d="M36 210c64 22 108-24 168 6"/>
+  </g>
+  <g transform="translate(48 16)">
+    <ellipse cx="248" cy="336" rx="168" ry="12" fill="#000" opacity="0.28"/>
+    <path fill="#7c756c" d="M78 300c22-34 78-52 146-54 78-2 146 12 184 36 16 16 12 40-24 50-74 16-214 14-272-8-16-6-22-16-14-24z"/>
+    <path fill="#a49c8f" d="M118 262c20-30 66-46 122-48 64-2 118 12 140 32 10 14 2 34-36 42-62 14-176 12-210-6-12-6-16-14-16-20z"/>
+    <path fill="#8b927f" d="M150 224c16-28 54-42 100-44 52-2 96 12 112 30 8 12-2 30-32 36-50 12-140 10-166-4-10-6-14-12-14-18z"/>
+    <path fill="#cfc6b6" d="M176 188c14-24 46-36 82-36 42 0 74 12 84 28 6 10-4 24-28 30-40 8-108 6-128-6-8-4-12-10-10-16z"/>
+    <path fill="#e7e1d4" d="M204 156c12-20 38-30 64-30 28 0 52 10 58 24 4 8-4 20-22 24-30 6-80 4-94-6-6-4-8-8-6-12z"/>
+    <path fill="#f6f2ea" d="M236 128c8-12 24-18 36-16 14 2 22 10 20 18-2 8-14 14-26 14-14 0-26-6-30-16z"/>
+    <path fill="#6d7a62" d="M214 214c18-6 34-2 40 6 4 6-4 12-18 14-16 2-32-4-34-10-2-4 2-8 12-10z"/>
+    <path fill="none" stroke="#c6a36a" stroke-width="1.5" stroke-linecap="round" d="M430 318c36 8 52 8 78 0"/>
+  </g>
+  <text x="520" y="142" fill="#c6a36a" font-family="Georgia, 'Liberation Serif', 'Noto Serif', serif" font-size="15" letter-spacing="3.2">ONE TICKET &#183; ONE WORKTREE</text>
+  <path d="M520 162h56" stroke="#c6a36a" stroke-width="1.5"/>
+  <text x="516" y="248" fill="#f4f0e6" font-family="Georgia, 'Liberation Serif', 'Noto Serif', serif" font-size="104">cairn</text>
+  <text x="520" y="296" fill="#b7b0a4" font-family="Georgia, 'Liberation Serif', 'Noto Serif', serif" font-size="22">Local checkpoints for one ticket per Git worktree.</text>
+</svg>
