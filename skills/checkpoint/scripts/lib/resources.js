@@ -18,10 +18,6 @@ export function readSkillFile(...parts) {
         throw error;
     }
 }
-export function cliCommand(event, host) {
-    const wrapper = fs.realpathSync(skillFile('scripts', 'cairn'));
-    return `${quote(wrapper)} hook ${event} --host ${host}`;
-}
-function quote(value) {
+export function quote(value) {
     return `'${value.replaceAll("'", `'\\''`)}'`;
 }

@@ -16,8 +16,9 @@ Commands:
   export      Print a portable checkpoint snapshot
   template    Print the checkpoint draft template
   hook        Print host hook output for session-start or stop
-  install     Register hooks and the checkpoint skill
-  uninstall   Remove hooks and the checkpoint skill
+  install     Install the skill for Codex, Cursor, and Grok, and hooks for
+              Codex and Cursor; Claude Code uses the plugin instead
+  uninstall   Remove those hooks and the skill
 
 checkpoint:
   --expected-revision N     Revision this draft replaces; 0 creates the first

@@ -1,21 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CairnError } from './lib.js';
-import { cliCommand, readSkillFile, skillFile } from './resources.js';
-const HOSTS = [
+import { quote, readSkillFile, skillFile } from './resources.js';
+// The installed skill is the portable unit (ADR 0002): hooks run its wrapper.
+const SKILL_NAME = 'cairn';
+const SKILL_HOME = ['.agents', 'skills'];
+const SKILL_READERS = ['.codex', '.cursor', '.grok'];
+const HOOK_HOSTS = [
     {
         id: 'cursor',
         directory: '.cursor',
         file: 'hooks.json',
         style: 'cursor',
         events: { 'session-start': 'sessionStart', stop: 'stop' },
-    },
-    {
-        id: 'claude',
-        directory: '.claude',
-        file: 'settings.json',
-        style: 'claude',
-        events: { 'session-start': 'SessionStart', stop: 'Stop' },
     },
     {
         id: 'codex',
@@ -25,24 +22,54 @@ const HOSTS = [
         events: { 'session-start': 'SessionStart', stop: 'Stop' },
     },
 ];
+// Claude Code uses the plugin; earlier installs wrote these entries.
+const LEGACY_CLAUDE = {
+    id: 'claude',
+    directory: '.claude',
+    file: 'settings.json',
+    style: 'claude',
+    events: { 'session-start': 'SessionStart', stop: 'Stop' },
+};
+const LEGACY_SKILL_HOSTS = ['.claude', '.cursor', '.codex'];
 export function installAdapters(home) {
     readSkillFile('SKILL.md');
-    return HOSTS.flatMap((host) => installHost(home, host));
+    const readers = SKILL_READERS.filter((directory) => hostDirectory(home, directory));
+    const lines = [];
+    if (readers.length === 0) {
+        lines.push('skill: skipped; no Codex, Cursor, or Grok configuration found');
+    }
+    else {
+        const skill = installSkill(home);
+        lines.push(`skill: installed ${skill}`);
+        const wrapper = path.join(skill, 'scripts', 'cairn');
+        for (const host of HOOK_HOSTS)
+            lines.push(...installHooks(home, host, wrapper));
+        if (readers.includes('.grok'))
+            lines.push('grok: skill only; ask the agent to resume');
+    }
+    lines.push(...removeLegacy(home));
+    lines.push(pluginHint());
+    return lines;
 }
 export function uninstallAdapters(home) {
-    return HOSTS.flatMap((host) => uninstallHost(home, host));
+    const lines = HOOK_HOSTS.flatMap((host) => removeHooks(home, host));
+    const skill = path.join(home, ...SKILL_HOME, SKILL_NAME);
+    if (removeDirectory(skill))
+        lines.push(`skill: removed ${skill}`);
+    lines.push(...removeLegacy(home));
+    return lines;
 }
 export function templateText() {
     return readSkillFile('template.md');
 }
-function installHost(home, host) {
-    const directory = hostDirectory(home, host);
+function installHooks(home, host, wrapper) {
+    const directory = hostDirectory(home, host.directory);
     if (!directory)
         return [`${host.id}: skipped`];
     const configPath = path.join(directory, host.file);
     const { existed, value } = readConfig(configPath);
     for (const event of ['session-start', 'stop']) {
-        const command = cliCommand(event, host.id);
+        const command = `${quote(wrapper)} hook ${event} --host ${host.id}`;
         const key = host.events[event];
         if (host.style === 'cursor')
             upsertFlat(value, key, event, command);
@@ -52,59 +79,72 @@ function installHost(home, host) {
     if (host.style === 'cursor' && value.version === undefined)
         value.version = 1;
     writeConfig(configPath, value, existed);
-    const skill = installSkill(directory);
-    return [`${host.id}: wrote ${configPath}`, `${host.id}: installed ${skill}`];
+    return [`${host.id}: wrote ${configPath}`];
 }
-function uninstallHost(home, host) {
-    const directory = hostDirectory(home, host);
+function removeHooks(home, host) {
+    const directory = hostDirectory(home, host.directory);
     if (!directory)
-        return [`${host.id}: skipped`];
-    const lines = [];
+        return [];
     const configPath = path.join(directory, host.file);
-    if (fs.existsSync(configPath)) {
-        const { existed, value } = readConfig(configPath);
-        let removed = false;
-        for (const event of ['session-start', 'stop']) {
-            const key = host.events[event];
-            if (host.style === 'cursor')
-                removed = removeFlat(value, key) || removed;
-            else
-                removed = removeNested(value, key) || removed;
-        }
-        if (removed) {
-            writeConfig(configPath, value, existed);
-            lines.push(`${host.id}: updated ${configPath}`);
-        }
-        else {
-            lines.push(`${host.id}: unchanged ${configPath}`);
-        }
+    if (!fs.existsSync(configPath))
+        return [];
+    const { existed, value } = readConfig(configPath);
+    let removed = false;
+    for (const event of ['session-start', 'stop']) {
+        const key = host.events[event];
+        if (host.style === 'cursor')
+            removed = removeFlat(value, key) || removed;
+        else
+            removed = removeNested(value, key) || removed;
     }
-    const skill = path.join(directory, 'skills', 'cairn');
-    if (fs.existsSync(skill)) {
-        const stat = fs.lstatSync(skill);
-        if (stat.isSymbolicLink())
-            throw new CairnError(`${skill} must be a real directory`);
-        fs.rmSync(skill, { recursive: true, force: true });
-        lines.push(`${host.id}: removed ${skill}`);
+    if (!removed)
+        return [];
+    writeConfig(configPath, value, existed);
+    return [`${host.id}: removed cairn hooks from ${configPath}`];
+}
+function removeLegacy(home) {
+    const lines = removeHooks(home, LEGACY_CLAUDE);
+    for (const directory of LEGACY_SKILL_HOSTS) {
+        const skill = path.join(home, directory, 'skills', SKILL_NAME);
+        if (removeDirectory(skill))
+            lines.push(`${directory.slice(1)}: removed old skill ${skill}`);
     }
     return lines;
 }
-function installSkill(directory) {
-    const skillDir = path.join(directory, 'skills', 'cairn');
-    const existing = lstatOrNull(skillDir);
-    if (existing?.isSymbolicLink())
-        throw new CairnError(`${skillDir} must be a real directory`);
-    fs.mkdirSync(skillDir, { recursive: true, mode: 0o755 });
-    const destination = path.join(skillDir, 'SKILL.md');
-    if (lstatOrNull(destination)?.isSymbolicLink())
-        throw new CairnError(`${destination} must be a regular file`);
-    fs.copyFileSync(skillFile('SKILL.md'), destination);
+// Copies the whole skill folder, renamed to cairn so it stays distinct in the shared skills directory.
+function installSkill(home) {
+    const parent = path.join(home, ...SKILL_HOME);
+    const destination = path.join(parent, SKILL_NAME);
+    const source = fs.realpathSync(skillFile());
+    if (fs.existsSync(destination) && fs.realpathSync(destination) === source)
+        return destination;
+    fs.mkdirSync(parent, { recursive: true, mode: 0o755 });
+    const staging = `${destination}.cairn-new`;
+    removeDirectory(staging);
+    fs.cpSync(source, staging, { recursive: true });
+    const manifest = path.join(staging, 'SKILL.md');
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace(/^name: .*$/m, `name: ${SKILL_NAME}`));
+    fs.chmodSync(path.join(staging, 'scripts', 'cairn'), 0o755);
+    removeDirectory(destination);
+    fs.renameSync(staging, destination);
     return destination;
 }
-function hostDirectory(home, host) {
-    const directory = path.join(home, host.directory);
-    if (!fs.existsSync(directory))
-        return null;
+function removeDirectory(directory) {
+    const stat = lstatOrNull(directory);
+    if (!stat)
+        return false;
+    if (stat.isSymbolicLink() || !stat.isDirectory())
+        throw new CairnError(`${directory} must be a real directory`);
+    fs.rmSync(directory, { recursive: true, force: true });
+    return true;
+}
+function pluginHint() {
+    const root = skillFile('..', '..');
+    const source = fs.existsSync(path.join(root, '.claude-plugin', 'marketplace.json')) ? root : 'this repository';
+    return `claude: use the plugin: /plugin marketplace add ${source}, then /plugin install cairn@cairn-checkpoints`;
+}
+function hostDirectory(home, name) {
+    const directory = path.join(home, name);
     let stat;
     try {
         stat = fs.statSync(directory);

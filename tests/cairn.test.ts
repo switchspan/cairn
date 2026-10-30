@@ -463,8 +463,12 @@ test('install merges host config and uninstall removes only cairn', () => {
 
     const installed = runInput(['install', '--home', home]);
     assert.equal(installed.status, 0, installed.stderr);
-    assert.match(installed.stdout, /claude: skipped/);
+    assert.match(installed.stdout, /claude: use the plugin: \/plugin marketplace add /);
     assert.equal(fs.existsSync(path.join(home, '.claude')), false);
+    const skill = path.join(home, '.agents', 'skills', 'cairn');
+    assert.match(fs.readFileSync(path.join(skill, 'SKILL.md'), 'utf8'), /^name: cairn$/m);
+    const template = spawnSync(path.join(skill, 'scripts', 'cairn'), ['template'], { encoding: 'utf8' });
+    assert.match(template.stdout, /## Next action/, template.stderr);
     const cursor = JSON.parse(fs.readFileSync(cursorHooks, 'utf8')) as {
       version: number;
       unrelated: boolean;
@@ -475,7 +479,7 @@ test('install merges host config and uninstall removes only cairn', () => {
     assert.equal(cursor.hooks.sessionStart[0]?.command, 'echo keep-session');
     assert.equal(hookCommands(cursor, 'session-start').length, 1);
     assert.equal(hookCommands(cursor, 'stop').length, 1);
-    assert.match(fs.readFileSync(path.join(cursorDir, 'skills', 'cairn', 'SKILL.md'), 'utf8'), /name: checkpoint/);
+    assert.ok(hookCommands(cursor, 'session-start')[0]?.startsWith(`'${path.join(skill, 'scripts', 'cairn')}'`));
     const codex = JSON.parse(fs.readFileSync(codexHooks, 'utf8')) as {
       theme: string;
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
@@ -514,8 +518,42 @@ test('install merges host config and uninstall removes only cairn', () => {
     assert.deepEqual(restoredCodex.hooks.SessionStart, [{
       hooks: [{ type: 'command', command: 'echo keep-codex' }],
     }]);
-    assert.equal(fs.existsSync(path.join(cursorDir, 'skills', 'cairn')), false);
-    assert.equal(fs.existsSync(path.join(codexDir, 'skills', 'cairn')), false);
+    assert.equal(fs.existsSync(skill), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('install removes the old Claude Code hooks and per-host skill copies', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-home-'));
+  try {
+    const claudeDir = path.join(home, '.claude');
+    fs.mkdirSync(path.join(claudeDir, 'skills', 'cairn'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.grok'));
+    const settings = path.join(claudeDir, 'settings.json');
+    fs.writeFileSync(settings, `${JSON.stringify({
+      model: 'opus',
+      hooks: {
+        SessionStart: [{ hooks: [
+          { type: 'command', command: "'node' '/old/cli.js' hook session-start --host claude" },
+          { type: 'command', command: 'echo keep-claude' },
+        ] }],
+        Stop: [{ hooks: [{ type: 'command', command: "'node' '/old/cli.js' hook stop --host claude" }] }],
+      },
+    }, null, 2)}\n`);
+
+    const installed = runInput(['install', '--home', home]);
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /grok: skill only/);
+    assert.ok(fs.existsSync(path.join(home, '.agents', 'skills', 'cairn', 'SKILL.md')));
+    assert.equal(fs.existsSync(path.join(claudeDir, 'skills', 'cairn')), false);
+    const cleaned = JSON.parse(fs.readFileSync(settings, 'utf8')) as {
+      model: string;
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }>; Stop?: unknown };
+    };
+    assert.equal(cleaned.model, 'opus');
+    assert.deepEqual(cleaned.hooks.SessionStart, [{ hooks: [{ type: 'command', command: 'echo keep-claude' }] }]);
+    assert.equal(cleaned.hooks.Stop, undefined);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
