@@ -1,0 +1,6 @@
+{
+  "name": "cairn",
+  "version": "0.1.0",
+  "description": "Local checkpoints for one ticket per Git worktree, resumed automatically in each new session.",
+  "license": "MIT"
+}

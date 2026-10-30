@@ -595,6 +595,29 @@ test('without Node the wrapper reports and lets hooks continue', () => {
   }
 });
 
+test('the Claude Code plugin hooks run the skill wrapper', withFixture((fx) => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8')) as {
+    hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+  };
+  const command = (event: string) => config.hooks[event]?.[0]?.hooks[0]?.command ?? '';
+  const run = (event: string) => spawnSync('/bin/sh', ['-c', command(event)], {
+    encoding: 'utf8',
+    input: JSON.stringify({ cwd: fx.repo }),
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: root },
+  });
+  fx.save();
+  fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
+  const start = run('SessionStart');
+  assert.equal(start.status, 0, start.stderr);
+  assert.match(start.stdout, /DRIFT: fingerprint/);
+  const stop = run('Stop');
+  assert.equal(stop.status, 0, stop.stderr);
+  assert.match(stop.stdout, /"decision":"block"/);
+  const shim = spawnSync(path.join(root, 'bin', 'cairn'), ['--cwd', fx.repo, 'status'], { encoding: 'utf8' });
+  assert.match(shim.stdout, /"revision": 1/, shim.stderr);
+}));
+
 test('hook usage errors stay on stderr', () => {
   const result = runInput(['hook', 'session-start']);
   assert.equal(result.status, 2);

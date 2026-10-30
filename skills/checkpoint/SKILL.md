@@ -7,7 +7,7 @@ description: Saves or resumes the cairn checkpoint for this Git worktree's ticke
 
 A checkpoint is the reported execution state of one ticket in one worktree. It carries what the next session needs: objective, current state, decisions, verification, next action.
 
-Run commands from the ticket worktree. `CAIRN` below means the `scripts/cairn` file inside this skill's directory, as an absolute path.
+Run commands from the ticket worktree. `CAIRN` below means the `scripts/cairn` file inside this skill's directory, as an absolute path, or plain `cairn` when that is on `PATH`.
 
 ## Checkpoint
 
