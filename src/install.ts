@@ -88,6 +88,8 @@ function installHooks(home: string, host: HostSpec, wrapper: string): string[] {
   }
   if (host.style === 'cursor' && value.version === undefined) value.version = 1;
   writeConfig(configPath, value, existed);
+  // Codex runs a new or changed hook only after the user trusts it in the interactive UI.
+  if (host.id === 'codex') return [`${host.id}: wrote ${configPath}; start codex and trust the two cairn hooks`];
   return [`${host.id}: wrote ${configPath}`];
 }
 

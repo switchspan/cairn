@@ -138,7 +138,9 @@ skills/checkpoint/scripts/cairn install
 
 That copies the skill to `~/.agents/skills/cairn` and adds hooks to
 `~/.codex/hooks.json` and `~/.cursor/hooks.json` for the hosts whose directory
-exists. It also removes hooks and skill copies left by earlier versions,
+exists. Codex runs new hooks only after you trust them, so start `codex` once
+and approve the two cairn hooks. It also removes hooks and skill copies left by
+earlier versions,
 including those in `~/.claude`. `cairn uninstall` removes only cairn's entries.
 
 ## Manual commands
