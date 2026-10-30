@@ -19,9 +19,11 @@ export function runHook(event: HookEvent, host: Host, stdin: string): string {
     }
     const checkpoint = load(root);
     if (event === 'session-start') return renderSession(host, sessionStartMessage(checkpoint));
+    // Cursor's only stop output submits a new user turn, so it gets no reminder.
+    if (host === 'cursor') return '';
     const message = takeStopMessage(root, checkpoint);
     if (!message) return '';
-    return renderStop(host, message);
+    return `${JSON.stringify({ systemMessage: message })}\n`;
   } catch {
     return '';
   }
@@ -82,7 +84,7 @@ function takeStopMessage(root: string, checkpoint: Checkpoint): string | null {
   }
   const revision = checkpoint.metadata.revision;
   const drift = checkpoint.drift.join(', ');
-  return `Cairn revision ${revision} is stale (drift: ${drift}); write a checkpoint with the cairn skill before switching agents.`;
+  return `Cairn revision ${revision} is stale (drift: ${drift}). Ask the agent to checkpoint before switching agents.`;
 }
 
 function readMarker(file: string): string | null {
@@ -108,9 +110,4 @@ function renderSession(host: Host, text: string): string {
       additionalContext: text,
     },
   })}\n`;
-}
-
-function renderStop(host: Host, text: string): string {
-  if (host === 'cursor') return `${JSON.stringify({ followup_message: text })}\n`;
-  return `${JSON.stringify({ decision: 'block', reason: text })}\n`;
 }

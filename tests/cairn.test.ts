@@ -415,26 +415,25 @@ test('stop reminds once for a drifted fingerprint', withFixture((fx) => {
 
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const claude = runInput(['hook', 'stop', '--host', 'claude'], JSON.stringify({ cwd: fx.repo }));
-  const blocked = JSON.parse(claude.stdout) as { decision?: string; reason?: string };
-  assert.deepEqual(Object.keys(blocked), ['decision', 'reason']);
-  assert.equal(blocked.decision, 'block');
-  assert.match(blocked.reason ?? '', /Cairn revision 1 is stale \(drift: fingerprint\)/);
+  const notice = JSON.parse(claude.stdout) as { systemMessage?: string };
+  assert.deepEqual(Object.keys(notice), ['systemMessage']);
+  assert.match(notice.systemMessage ?? '', /Cairn revision 1 is stale \(drift: fingerprint\)/);
   const marker = fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8');
   assert.match(marker, /^[0-9a-f]{64}\n$/);
 
-  const again = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
+  const again = runInput(['hook', 'stop', '--host', 'codex'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(again.stdout, '');
   assert.equal(fs.readFileSync(path.join(fx.repo, '.cairn', 'stop-nudge'), 'utf8'), marker);
   assert.doesNotMatch(fx.git('status', '--porcelain'), /stop-nudge/);
 }));
 
-test('cursor stop uses followup_message', withFixture((fx) => {
+test('cursor stop stays silent because its only output starts a new turn', withFixture((fx) => {
   fx.save();
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const result = runInput(['hook', 'stop', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
-  const payload = JSON.parse(result.stdout) as { followup_message?: string };
-  assert.deepEqual(Object.keys(payload), ['followup_message']);
-  assert.match(payload.followup_message ?? '', /revision 1/);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
 }));
 
 test('install merges host config and uninstall removes only cairn', () => {
@@ -651,7 +650,7 @@ test('the Claude Code plugin hooks run the skill wrapper', withFixture((fx) => {
   assert.match(start.stdout, /DRIFT: fingerprint/);
   const stop = run('Stop');
   assert.equal(stop.status, 0, stop.stderr);
-  assert.match(stop.stdout, /"decision":"block"/);
+  assert.match(stop.stdout, /"systemMessage":"Cairn revision 1 is stale/);
   const shim = spawnSync(path.join(root, 'bin', 'cairn'), ['--cwd', fx.repo, 'status'], { encoding: 'utf8' });
   assert.match(shim.stdout, /"revision": 1/, shim.stderr);
 }));

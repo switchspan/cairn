@@ -101,8 +101,10 @@ Session start runs `cairn hook session-start`. It injects a fresh body, or a
 drifted body under a `DRIFT` banner naming the fields
 ([ADR 0001](docs/adr/0001-inject-drifted-checkpoint-at-session-start.md)).
 Without a checkpoint, it names the inferred ticket on a ticket branch and stays
-silent elsewhere. Stop runs `cairn hook stop` and emits one reminder per
-drifted fingerprint, only where a checkpoint exists. Hooks read the worktree
+silent elsewhere. Stop runs `cairn hook stop` and, where a checkpoint exists,
+shows the user one notice per drifted fingerprint through `systemMessage`. The
+notice leaves the agent's turn finished. Cursor's only stop output submits a
+new user turn, so Cursor gets no stop notice. Hooks read the worktree
 from their stdin payload, fail open, and do not select another worktree. MCP
 and remote publication stay deferred.
 
