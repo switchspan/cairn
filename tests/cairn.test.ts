@@ -304,7 +304,7 @@ test('template prints the draft headings', () => {
   assert.match(result.stdout, /## Next action/);
 });
 
-test('session start injects a fresh body and a stale refusal', withFixture((fx) => {
+test('session start injects a fresh body and a drifted body under a banner', withFixture((fx) => {
   const absent = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(absent.status, 0, absent.stderr);
   assert.equal(absent.stdout, '');
@@ -351,11 +351,56 @@ test('session start injects a fresh body and a stale refusal', withFixture((fx) 
   fs.writeFileSync(path.join(fx.repo, 'code.txt'), 'changed');
   const stale = runInput(['hook', 'session-start', '--host', 'cursor'], JSON.stringify({ cwd: fx.repo }));
   assert.equal(stale.status, 0, stale.stderr);
-  const refusal = JSON.parse(stale.stdout) as { additional_context?: string };
-  assert.match(refusal.additional_context ?? '', /Drift: fingerprint/);
-  assert.doesNotMatch(refusal.additional_context ?? '', /fix retries/);
+  const drifted = JSON.parse(stale.stdout) as { additional_context?: string };
+  assert.match(drifted.additional_context ?? '', /\nDRIFT: fingerprint\. .*Verification/);
+  assert.match(drifted.additional_context ?? '', /Objective: fix retries/);
   assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'stop-nudge')), false);
   assert.equal(runInput(['hook', 'session-start', '--host', 'cursor'], '{').stdout, '');
+}));
+
+test('checkpoint reads stdin and infers a Jira key from the branch', withFixture((fx) => {
+  fx.git('checkout', '-b', 'feature/PAY-142-retries');
+  const first = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: from stdin.\n');
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /^Checkpoint 1 for PAY-142: /);
+  assert.equal(fx.run(['resume']).stdout, 'Objective: from stdin.\n');
+
+  fx.git('checkout', '-b', 'PAY-999-other');
+  const kept = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '1'], 'Objective: still 142.\n');
+  assert.equal(kept.status, 0, kept.stderr);
+  assert.match(kept.stdout, /^Checkpoint 2 for PAY-142: /);
+}));
+
+test('a GitHub issue number resolves against a github.com origin', withFixture((fx) => {
+  fx.git('remote', 'add', 'origin', 'git@github.com:acme/pay.git');
+  fx.git('checkout', '-b', 'fix/142-retries');
+  const ssh = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: ssh.\n');
+  assert.match(ssh.stdout, /for https:\/\/github\.com\/acme\/pay\/issues\/142: /, ssh.stderr);
+
+  const other = path.join(fx.base, 'issue-worktree');
+  fx.git('worktree', 'add', '-b', 'issue-7', other);
+  fx.git('remote', 'set-url', 'origin', 'https://github.com/acme/pay.git');
+  const https = runInput(['--cwd', other, 'checkpoint', '--expected-revision', '0'], 'Objective: https.\n');
+  assert.match(https.stdout, /for https:\/\/github\.com\/acme\/pay\/issues\/7: /, https.stderr);
+}));
+
+test('checkpoint without an inferable ticket asks for --ticket', withFixture((fx) => {
+  const result = runInput(['--cwd', fx.repo, 'checkpoint', '--expected-revision', '0'], 'Objective: x.\n');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /pass --ticket/);
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn', 'current.md')), false);
+}));
+
+test('session start names the ticket only on a ticket branch without a checkpoint', withFixture((fx) => {
+  const payload = JSON.stringify({ cwd: fx.repo });
+  assert.equal(runInput(['hook', 'session-start', '--host', 'claude'], payload).stdout, '');
+  fx.git('checkout', '-b', 'PAY-142-retries');
+  const result = runInput(['hook', 'session-start', '--host', 'claude'], payload);
+  const context = (JSON.parse(result.stdout) as { hookSpecificOutput?: { additionalContext?: string } })
+    .hookSpecificOutput?.additionalContext ?? '';
+  assert.match(context, /No cairn checkpoint exists yet for PAY-142/);
+  assert.equal(runInput(['hook', 'stop', '--host', 'claude'], payload).stdout, '');
+  assert.equal(fs.existsSync(path.join(fx.repo, '.cairn')), false);
 }));
 
 test('stop reminds once for a drifted fingerprint', withFixture((fx) => {
