@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { atomicWrite, prefersFlock } from '../src/lib.js';
 
-const CLI = fileURLToPath(new URL('../src/cli.js', import.meta.url));
+const SHIPPED = fileURLToPath(new URL('../../skills/checkpoint/scripts/lib/', import.meta.url));
+const FRESH = fileURLToPath(new URL('../src/', import.meta.url));
+const CLI = path.join(SHIPPED, 'cli.js');
+const WRAPPER = fileURLToPath(new URL('../../skills/checkpoint/scripts/cairn', import.meta.url));
 const TICKET = 'https://example.invalid/PAY-142';
 
 interface Result {
@@ -472,7 +475,7 @@ test('install merges host config and uninstall removes only cairn', () => {
     assert.equal(cursor.hooks.sessionStart[0]?.command, 'echo keep-session');
     assert.equal(hookCommands(cursor, 'session-start').length, 1);
     assert.equal(hookCommands(cursor, 'stop').length, 1);
-    assert.match(fs.readFileSync(path.join(cursorDir, 'skills', 'cairn', 'SKILL.md'), 'utf8'), /name: cairn/);
+    assert.match(fs.readFileSync(path.join(cursorDir, 'skills', 'cairn', 'SKILL.md'), 'utf8'), /name: checkpoint/);
     const codex = JSON.parse(fs.readFileSync(codexHooks, 'utf8')) as {
       theme: string;
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
@@ -532,6 +535,63 @@ test('install refuses an unreadable hooks file without replacing it', () => {
     assert.equal(fs.existsSync(`${hooks}.cairn-bak`), false);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the committed skill build matches a fresh build of src', () => {
+  const javascript = (directory: string) => fs.readdirSync(directory).filter((name) => name.endsWith('.js')).sort();
+  assert.deepEqual(javascript(SHIPPED), javascript(FRESH), 'run npm run build and commit the skill build');
+  for (const name of javascript(FRESH)) {
+    assert.equal(
+      fs.readFileSync(path.join(SHIPPED, name), 'utf8'),
+      fs.readFileSync(path.join(FRESH, name), 'utf8'),
+      `${name} is stale; run npm run build and commit the skill build`,
+    );
+  }
+});
+
+test('the wrapper runs the CLI through a symlink', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-bin-'));
+  try {
+    const link = path.join(base, 'cairn');
+    fs.symlinkSync(WRAPPER, link);
+    const result = spawnSync(link, ['template'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /## Next action/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('without Node the wrapper reports and lets hooks continue', () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-nonode-'));
+  try {
+    for (const tool of ['dirname', 'readlink', 'cat']) {
+      const found = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
+      fs.symlinkSync(found, path.join(bin, tool));
+    }
+    const run = (args: string[]) => spawnSync('/bin/sh', [WRAPPER, ...args], {
+      encoding: 'utf8',
+      input: '{}',
+      env: { PATH: bin },
+    });
+    const claude = run(['hook', 'session-start', '--host', 'claude']);
+    assert.equal(claude.status, 0, claude.stderr);
+    const context = (JSON.parse(claude.stdout) as { hookSpecificOutput?: { additionalContext?: string } })
+      .hookSpecificOutput?.additionalContext;
+    assert.match(context ?? '', /needs Node\.js 20\+/);
+    const cursor = JSON.parse(run(['hook', 'session-start', '--host', 'cursor']).stdout) as {
+      additional_context?: string;
+    };
+    assert.match(cursor.additional_context ?? '', /checkpoints are disabled/);
+    const stop = run(['hook', 'stop', '--host', 'claude']);
+    assert.equal(stop.status, 0);
+    assert.equal(stop.stdout, '');
+    const status = run(['status']);
+    assert.equal(status.status, 1);
+    assert.match(status.stderr, /needs Node\.js 20\+/);
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
   }
 });
 

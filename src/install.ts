@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CairnError } from './lib.js';
-import { cliCommand, packageFile, readPackageFile } from './resources.js';
+import { cliCommand, readSkillFile, skillFile } from './resources.js';
 
 type HookEvent = 'session-start' | 'stop';
 
@@ -38,7 +38,7 @@ const HOSTS: HostSpec[] = [
 ];
 
 export function installAdapters(home: string): string[] {
-  readPackageFile('adapters', 'cairn', 'SKILL.md');
+  readSkillFile('SKILL.md');
   return HOSTS.flatMap((host) => installHost(home, host));
 }
 
@@ -47,7 +47,7 @@ export function uninstallAdapters(home: string): string[] {
 }
 
 export function templateText(): string {
-  return readPackageFile('templates', 'checkpoint.md');
+  return readSkillFile('template.md');
 }
 
 function installHost(home: string, host: HostSpec): string[] {
@@ -104,7 +104,7 @@ function installSkill(directory: string): string {
   fs.mkdirSync(skillDir, { recursive: true, mode: 0o755 });
   const destination = path.join(skillDir, 'SKILL.md');
   if (lstatOrNull(destination)?.isSymbolicLink()) throw new CairnError(`${destination} must be a regular file`);
-  fs.copyFileSync(packageFile('adapters', 'cairn', 'SKILL.md'), destination);
+  fs.copyFileSync(skillFile('SKILL.md'), destination);
   return destination;
 }
 
